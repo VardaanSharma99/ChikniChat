@@ -1,11 +1,11 @@
+// ==========================================================
+//  ReelRite Chat - Single File Server for Render
+// ==========================================================
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// =================================================================
-// PART 1: SERVER-SIDE API LOGIC (Matchmaking)
-// =================================================================
-
+// --- PART 1: IN-MEMORY MATCHMAKING API ---
 let waitingQueue = [];
 
 app.get('/api/match', (req, res) => {
@@ -13,55 +13,49 @@ app.get('/api/match', (req, res) => {
     if (!peerId) {
         return res.status(400).json({ error: 'peerId is required' });
     }
+    // Prevent the same user from matching with themselves if they retry quickly
+    waitingQueue = waitingQueue.filter(id => id !== peerId);
+
     if (waitingQueue.length > 0) {
         const partnerId = waitingQueue.shift();
-        console.log(`Matched ${peerId} with ${partnerId}`);
+        console.log(`[Matchmaking] Matched ${peerId} with ${partnerId}`);
         res.status(200).json({ partnerId });
     } else {
         waitingQueue.push(peerId);
-        console.log(`${peerId} added to queue.`);
+        console.log(`[Matchmaking] ${peerId} added to queue.`);
         res.status(200).json({ status: 'waiting' });
     }
 });
 
-// =================================================================
-// PART 2: THE MAIN ROUTE THAT SERVES THE ENTIRE FRONTEND
-// =================================================================
 
+// --- PART 2: THE ROOT ROUTE THAT SERVES THE ENTIRE APP ---
+// This is the most important part to fix the "Not Found" error.
+// It tells the server what to do when someone visits your main URL.
 app.get('/', (req, res) => {
-    // We will send a single HTML string that contains everything.
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <!-- Core SEO Meta Tags -->
     <title>ReelRite Chat - Anonymous, Random Video Chat</title>
     <meta name="description" content="Connect instantly with random strangers for free anonymous video chat, audio call, or text chat. No signup required. Fast, secure, and private conversations on ReelRite.site.">
     <link rel="canonical" href="https://ReelRite.site">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>">
-    
-    <!-- ================== EMBEDDED CSS ================== -->
     <style>
-        :root {
-            --bg-color: #121212; --surface-color: #1e1e1e; --primary-color: #03dac6;
-            --text-color: #e0e0e0; --text-secondary-color: #a0a0a0; --error-color: #cf6679;
-        }
+        :root { --bg-color: #121212; --surface-color: #1e1e1e; --primary-color: #03dac6; --text-color: #e0e0e0; --text-secondary-color: #a0a0a0; --error-color: #cf6679; }
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); line-height: 1.6; }
         header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; background-color: var(--surface-color); border-bottom: 1px solid #333; }
         .logo { font-size: 1.5rem; font-weight: bold; }
-        nav a { color: var(--text-color); text-decoration: none; margin-left: 1.5rem; transition: color 0.2s; }
-        nav a:hover { color: var(--primary-color); }
         main { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
         #loading-screen { text-align: center; padding-top: 10vh; }
         #loading-screen h1 { font-size: 3rem; color: var(--primary-color); }
         #loading-screen button { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 1rem 2rem; font-size: 1.2rem; font-weight: bold; cursor: pointer; border-radius: 8px; margin-top: 2rem; transition: transform 0.2s; }
         #loading-screen button:hover { transform: scale(1.05); }
         .permission-text { margin-top: 1rem; color: var(--text-secondary-color); font-size: 0.9rem; }
-        #chat-app { display: flex; gap: 1.5rem; }
+        #chat-app { display: none; gap: 1.5rem; }
+        #chat-app.active { display: flex; }
         .video-container { flex: 3; display: flex; flex-direction: column; gap: 1rem; }
         .video-wrapper { position: relative; background-color: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9;}
         #remote-video, #local-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -88,31 +82,23 @@ app.get('/', (req, res) => {
         #controls button:hover { background-color: #444; }
         #controls #next-btn { background-color: var(--primary-color); color: var(--bg-color); grid-column: 1 / -1; }
         #controls .danger { background-color: var(--error-color); color: var(--bg-color); }
-        .hidden { display: none !important; }
-        @media (max-width: 900px) { #chat-app { flex-direction: column; } .video-wrapper.local { bottom: 1rem; right: 1rem; width: 160px; } }
+        @media (max-width: 900px) { #chat-app.active { flex-direction: column; } .video-wrapper.local { bottom: 1rem; right: 1rem; width: 160px; } }
     </style>
 </head>
 <body>
-    <!-- ================== EMBEDDED HTML ================== -->
-    <header>
-        <div class="logo">ReelRite Chat 🦊</div>
-        <nav><a href="#home">Chat</a></nav>
-    </header>
-    <main id="home">
-        <div id="loading-screen" class="active">
+    <header><div class="logo">ReelRite Chat 🦊</div></header>
+    <main>
+        <div id="loading-screen">
             <h1>ReelRite Chat</h1>
             <p>Connecting you to the world, anonymously.</p>
             <button id="start-btn">Start Chatting</button>
             <p class="permission-text">Please allow camera and microphone access.</p>
         </div>
-        <div id="chat-app" class="hidden">
+        <div id="chat-app">
             <div class="video-container">
                 <div class="video-wrapper">
                     <video id="remote-video" autoplay playsinline></video>
-                    <div id="status-overlay" class="status-overlay">
-                        <div class="spinner"></div>
-                        <p id="status-text">Searching for a partner...</p>
-                    </div>
+                    <div id="status-overlay"><div class="spinner"></div><p id="status-text">...</p></div>
                 </div>
                 <div class="video-wrapper local"><video id="local-video" muted autoplay playsinline></video></div>
             </div>
@@ -133,12 +119,7 @@ app.get('/', (req, res) => {
             </div>
         </div>
     </main>
-    <footer><p>© 2023 ReelRite.site</p></footer>
-    
-    <!-- PeerJS Library from CDN -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-
-    <!-- ================== EMBEDDED CLIENT-SIDE JAVASCRIPT ================== -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const startBtn = document.getElementById('start-btn');
@@ -155,25 +136,21 @@ app.get('/', (req, res) => {
             const chatForm = document.getElementById('chat-form');
             const chatInput = document.getElementById('chat-input');
             const messagesDiv = document.getElementById('messages');
-
             let localStream, peer, currentPeerConnection, currentCall, myPeerId;
-            
             startBtn.addEventListener('click', initialize);
-            
             async function initialize() {
                 try {
                     loadingScreen.querySelector('h1').textContent = 'Getting permissions...';
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                     localVideo.srcObject = localStream;
-                    loadingScreen.classList.remove('active');
-                    chatApp.classList.remove('hidden');
+                    loadingScreen.style.display = 'none';
+                    chatApp.classList.add('active');
                     initializePeer();
                 } catch (err) {
                     loadingScreen.querySelector('h1').textContent = 'Error!';
                     loadingScreen.querySelector('p').textContent = 'Camera/mic access is required. Please refresh and allow.';
                 }
             }
-
             function initializePeer() {
                 peer = new Peer(undefined, { host: 'peerjs-server.fly.dev', secure: true, port: 443 });
                 peer.on('open', id => { myPeerId = id; findPartner(); });
@@ -185,23 +162,21 @@ app.get('/', (req, res) => {
                     call.on('close', endSession);
                 });
                 peer.on('connection', conn => { currentPeerConnection = conn; setupDataConnection(conn); });
-                peer.on('error', err => { console.error('PeerJS error:', err); addSystemMessage('Error. Reconnecting...'); resetState(); setTimeout(initializePeer, 3000); });
+                peer.on('error', err => { console.error('PeerJS error:', err); addSystemMessage('Error. Reconnecting...'); endSession(); setTimeout(findPartner, 3000); });
             }
-
             async function findPartner() {
                 statusOverlay.style.display = 'flex';
                 statusText.textContent = 'Searching for a partner...';
                 try {
                     const response = await fetch(\`/api/match?peerId=\${myPeerId}\`);
                     const data = await response.json();
-                    if (data.partnerId) { connectToPartner(data.partnerId); } 
+                    if (data.partnerId) { connectToPartner(data.partnerId); }
                     else { statusText.textContent = 'Waiting in queue...'; }
                 } catch (error) {
                     statusText.textContent = 'Error finding partner. Retrying...';
                     setTimeout(findPartner, 5000);
                 }
             }
-
             function connectToPartner(partnerId) {
                 statusText.textContent = 'Connecting...';
                 const call = peer.call(partnerId, localStream);
@@ -212,28 +187,20 @@ app.get('/', (req, res) => {
                 currentPeerConnection = conn;
                 setupDataConnection(conn);
             }
-            
             function setupDataConnection(conn) {
                 conn.on('open', () => { enableChat(); addSystemMessage('Partner connected!'); });
                 conn.on('data', data => { addChatMessage(data.message, 'remote'); });
                 conn.on('close', () => { addSystemMessage('Partner left.'); endSession(); });
             }
-
             function endSession() {
                 if (currentCall) { currentCall.close(); currentCall = null; }
                 if (currentPeerConnection) { currentPeerConnection.close(); currentPeerConnection = null; }
                 remoteVideo.srcObject = null;
                 disableChat();
-                findPartner();
-            }
-            function resetState() {
-                if(peer && !peer.destroyed) peer.destroy();
-                localStream.getTracks().forEach(track => track.stop());
-                loadingScreen.classList.add('active');
-                chatApp.classList.add('hidden');
+                if (myPeerId) findPartner();
             }
             nextBtn.addEventListener('click', endSession);
-            endBtn.addEventListener('click', () => { endSession(); resetState(); });
+            endBtn.addEventListener('click', () => { window.location.reload(); });
             toggleMicBtn.addEventListener('click', () => {
                 const enabled = localStream.getAudioTracks()[0].enabled;
                 localStream.getAudioTracks()[0].enabled = !enabled;
@@ -279,9 +246,7 @@ app.get('/', (req, res) => {
     res.send(htmlContent);
 });
 
-// =================================================================
-// PART 3: START THE SERVER
-// =================================================================
+// --- PART 3: START THE SERVER ---
 app.listen(PORT, () => {
-    console.log(`ReelRite single-file server listening on port ${PORT}`);
+    console.log(`[Server] ReelRite server is live on port ${PORT}`);
 });
