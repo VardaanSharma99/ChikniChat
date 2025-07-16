@@ -1,5 +1,5 @@
 // =======================================================================
-//  ReelRite Chat - Single File Server v8 (Ultimate Stability & Debug)
+//  ReelRite Chat - Single File Server v9 (The Final Proxy Fix)
 // =======================================================================
 const express = require('express');
 const http = require('http');
@@ -7,17 +7,15 @@ const { ExpressPeerServer } = require('peer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// It's crucial to create an HTTP server to attach the PeerJS server to.
 const server = http.createServer(app);
 
-// --- PART 1: SELF-HOSTED PEERJS SERVER with DEBUG LOGGING ---
+// --- PART 1: SELF-HOSTED PEERJS SERVER with PROXY FIX ---
 const peerServer = ExpressPeerServer(server, {
-    debug: false, // Set to false for cleaner logs, true for verbose
-    path: '/broker'
+    path: '/broker',
+    proxy: true // <<< THE MOST CRITICAL FIX FOR RENDER
 });
 
-// Add listeners to the peer server to see what's happening
+// Add listeners for debugging if needed
 peerServer.on('connection', (client) => {
     console.log(`[PeerJS] Client connected: ${client.getId()}`);
 });
@@ -28,7 +26,13 @@ peerServer.on('disconnect', (client) => {
 app.use('/broker', peerServer);
 
 
-// --- PART 2: ROBUST SERVER-SIDE MATCHMAKING LOGIC ---
+// --- PART 2: SERVER LOGIC (Matchmaking, Heartbeat, etc.) ---
+
+// Add a health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 const activeUsers = new Map();
 const waitingPeers = new Set();
 app.get('/api/stats', (req, res) => res.json({ online: activeUsers.size }));
@@ -143,18 +147,13 @@ app.get('/', (req, res) => {
             function initializePeer() {
                 if (peer) peer.destroy();
                 showStatus("Connecting to server...");
-                peer = new Peer(undefined, {
-                    host: location.hostname, // Use the same hostname
-                    port: location.port || (location.protocol === 'https:' ? 443 : 80),
-                    path: '/broker',
-                    // No need to set secure, port, or host manually, this is more robust
-                });
+                // This simplified config is the most robust for platforms like Render
+                peer = new Peer(undefined, { host: '/', path: '/broker' });
+
                 peer.on('open', id => { myPeerId = id; startHeartbeat(); startMatchmaking(); });
                 peer.on('connection', handleIncomingDataConnection);
                 peer.on('error', (err) => {
-                    // DETAILED ERROR LOGGING
                     console.error('PEERJS FATAL ERROR: ', err);
-                    console.error('Error Type: ', err.type);
                     showStatus(\`Connection Error (\${err.type}). Please refresh.\`);
                 });
             }
@@ -259,7 +258,6 @@ app.get('/', (req, res) => {
 });
 
 // --- PART 4: START THE SERVER ---
-// It's crucial to listen on the http server, not the Express app.
 server.listen(PORT, () => {
-    console.log(`[Server] ReelRite TEXT-ONLY server v8 is live on port ${PORT}`);
+    console.log(`[Server] ReelRite TEXT-ONLY server v9 is live on port ${PORT}`);
 });
