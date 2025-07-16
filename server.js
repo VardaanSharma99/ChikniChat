@@ -120,7 +120,7 @@ app.get('/', (req, res) => {
         <h1 class="logo">ReelRite <span>🦊</span></h1>
         <p>Connect instantly with random people from around the world. Your conversations are anonymous and secure.</p>
         <div id="online-status">🟢 <span id="online-counter">--</span> users online</div>
-        <button id="start-btn">Start Chatting</button>
+        <button id="start-btn">Start Chafffftting</button>
         <p class="permission-text">Camera and microphone access will be requested.</p>
     </div>
     <div id="chat-ui" class="ui-container">
