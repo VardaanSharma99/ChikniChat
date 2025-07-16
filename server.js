@@ -1,47 +1,74 @@
 // =======================================================================
-//  ReelRite Chat - Single File Server v3 (Corrected Matchmaking Logic)
+//  ReelRite Chat - Single File Server v4 (Connection Fix & Live Count)
 // =======================================================================
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- PART 1: ROBUST IN-MEMORY MATCHMAKING LOGIC ---
-// This system handles the race condition by creating pending matches.
-let waitingPeerId = null; // Holds the ID of the single user waiting.
+// --- PART 1: ROBUST SERVER-SIDE LOGIC ---
 
-app.get('/api/match', (req, res) => {
-    const { peerId } = req.query;
-    if (!peerId) {
-        return res.status(400).json({ error: 'peerId is required' });
-    }
+// A Map to store active users and their last heartbeat timestamp.
+// Key: peerId, Value: timestamp
+const activeUsers = new Map();
+// A Set to store users waiting for a match.
+const waitingPeers = new Set();
 
-    // Case 1: Someone is waiting for a partner.
-    if (waitingPeerId && waitingPeerId !== peerId) {
-        const partnerId = waitingPeerId;
-        waitingPeerId = null; // Clear the waiting spot
-        console.log(`[Matchmaking] Paired ${peerId} with ${partnerId}`);
-        // Immediately tell the requester who their partner is.
-        res.status(200).json({ partnerId: partnerId });
-    }
-    // Case 2: No one is waiting, so this user becomes the waiting peer.
-    else {
-        waitingPeerId = peerId;
-        console.log(`[Matchmaking] ${peerId} is now waiting.`);
-        // Tell the user they are waiting. They will poll again.
-        res.status(200).json({ status: 'waiting' });
-    }
+// API to get current stats (online users)
+app.get('/api/stats', (req, res) => {
+    res.json({ online: activeUsers.size });
 });
 
-// A cleanup endpoint for when a user disconnects before being matched.
-app.post('/api/leave', (req, res) => {
+// API for users to send a heartbeat to show they are still online
+app.post('/api/heartbeat', (req, res) => {
     const { peerId } = req.query;
-    if (waitingPeerId === peerId) {
-        waitingPeerId = null;
-        console.log(`[Matchmaking] ${peerId} left the queue.`);
+    if (peerId) {
+        activeUsers.set(peerId, Date.now());
     }
     res.status(200).send();
 });
 
+// The corrected matchmaking API
+app.get('/api/match', (req, res) => {
+    const { peerId } = req.query;
+    if (!peerId) return res.status(400).json({ error: 'peerId is required' });
+
+    // Ensure the current user is considered active
+    activeUsers.set(peerId, Date.now());
+    // Remove self from waiting list in case of a retry
+    waitingPeers.delete(peerId);
+
+    // Find a waiting partner
+    const waitingArray = Array.from(waitingPeers);
+    if (waitingArray.length > 0) {
+        const partnerId = waitingArray.shift(); // Get the first person waiting
+        waitingPeers.delete(partnerId); // Remove them from the queue
+        console.log(`[Matchmaking] Paired ${peerId} with ${partnerId}`);
+        res.json({ partnerId: partnerId });
+    } else {
+        // No one is waiting, so add this user to the queue
+        waitingPeers.add(peerId);
+        console.log(`[Matchmaking] ${peerId} is now waiting.`);
+        res.json({ status: 'waiting' });
+    }
+});
+
+// Garbage Collector: Periodically remove users who haven't sent a heartbeat
+setInterval(() => {
+    const now = Date.now();
+    const staleTime = 20000; // 20 seconds
+    let cleanedCount = 0;
+    
+    for (const [peerId, timestamp] of activeUsers.entries()) {
+        if (now - timestamp > staleTime) {
+            activeUsers.delete(peerId);
+            waitingPeers.delete(peerId); // Also remove from waiting queue if they were there
+            cleanedCount++;
+        }
+    }
+    if (cleanedCount > 0) {
+        console.log(`[GC] Cleaned up ${cleanedCount} stale users.`);
+    }
+}, 30000); // Run every 30 seconds
 
 // --- PART 2: THE ROOT ROUTE THAT SERVES THE ENTIRE APP ---
 app.get('/', (req, res) => {
@@ -54,7 +81,6 @@ app.get('/', (req, res) => {
     <title>ReelRite Chat - Anonymous, Random Video Chat</title>
     <meta name="description" content="Connect instantly with random strangers for free anonymous video chat. No signup required.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>">
-    
     <style>
         :root { --bg-color: #1a1a1a; --surface-color: rgba(30, 30, 30, 0.8); --primary-color: #2574ff; --danger-color: #ff3b30; --text-color: #f5f5f7; --text-secondary: #a8a8a8; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -65,6 +91,8 @@ app.get('/', (req, res) => {
         #lobby .logo { font-size: 3.5rem; font-weight: bold; }
         #lobby .logo span { font-size: 5rem; vertical-align: middle; }
         #lobby p { font-size: 1.2rem; color: var(--text-secondary); margin: 1rem 0 2rem 0; max-width: 500px; }
+        #online-status { margin-bottom: 2rem; font-size: 1rem; color: var(--primary-color); font-weight: 500; }
+        #online-status #online-counter { font-weight: bold; }
         #start-btn { background-color: var(--primary-color); color: white; border: none; padding: 1rem 2.5rem; font-size: 1.2rem; font-weight: bold; cursor: pointer; border-radius: 50px; transition: transform 0.2s, box-shadow 0.2s; }
         #start-btn:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(37, 116, 255, 0.4); }
         .permission-text { margin-top: 1.5rem; font-size: 0.9rem; color: var(--text-secondary); }
@@ -91,6 +119,7 @@ app.get('/', (req, res) => {
     <div id="lobby" class="ui-container active">
         <h1 class="logo">ReelRite <span>🦊</span></h1>
         <p>Connect instantly with random people from around the world. Your conversations are anonymous and secure.</p>
+        <div id="online-status">🟢 <span id="online-counter">--</span> users online</div>
         <button id="start-btn">Start Chatting</button>
         <p class="permission-text">Camera and microphone access will be requested.</p>
     </div>
@@ -111,13 +140,27 @@ app.get('/', (req, res) => {
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const lobbyUI = document.getElementById('lobby'), chatUI = document.getElementById('chat-ui');
+            const onlineCounter = document.getElementById('online-counter');
             const startBtn = document.getElementById('start-btn');
             const localVideo = document.getElementById('local-video'), remoteVideo = document.getElementById('remote-video');
             const statusOverlay = document.getElementById('status-overlay'), statusText = document.getElementById('status-text');
             const nextBtn = document.getElementById('next-btn'), endBtn = document.getElementById('end-btn');
             const micBtn = document.getElementById('mic-btn'), camBtn = document.getElementById('cam-btn');
-            let localStream, peer, currentCall, myPeerId, matchmakingInterval;
+            let localStream, peer, currentCall, myPeerId;
+            let matchmakingInterval, heartbeatInterval, statsInterval;
 
+            // --- Lobby Logic ---
+            async function updateOnlineCount() {
+                try {
+                    const response = await fetch('/api/stats');
+                    const data = await response.json();
+                    onlineCounter.textContent = data.online || 1;
+                } catch (error) { onlineCounter.textContent = '--'; }
+            }
+            statsInterval = setInterval(updateOnlineCount, 5000);
+            updateOnlineCount();
+
+            // --- Main Flow ---
             startBtn.addEventListener('click', startChatSession);
             
             async function startChatSession() {
@@ -125,8 +168,11 @@ app.get('/', (req, res) => {
                     lobbyUI.querySelector('p').textContent = 'Requesting permissions...';
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                     localVideo.srcObject = localStream;
+                    
+                    clearInterval(statsInterval); // Stop polling stats on the lobby
                     lobbyUI.classList.remove('active');
                     chatUI.classList.add('active');
+                    
                     initializePeer();
                 } catch (err) {
                     lobbyUI.querySelector('p').textContent = 'Camera/mic access is required. Please refresh and allow.';
@@ -136,34 +182,43 @@ app.get('/', (req, res) => {
             function initializePeer() {
                 if (peer) peer.destroy();
                 peer = new Peer(undefined, { host: 'peerjs-server.fly.dev', secure: true, port: 443 });
-                peer.on('open', id => { myPeerId = id; startMatchmaking(); });
+                peer.on('open', id => {
+                    myPeerId = id;
+                    startHeartbeat();
+                    startMatchmaking();
+                });
                 peer.on('call', handleIncomingCall);
                 peer.on('error', (err) => { console.error('PeerJS error:', err); showStatus('Connection error...'); });
+            }
+
+            // --- Heartbeat & Matchmaking ---
+            function startHeartbeat() {
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                heartbeatInterval = setInterval(() => {
+                    if (myPeerId) fetch(\`/api/heartbeat?peerId=\${myPeerId}\`, { method: 'POST' });
+                }, 10000); // Send a heartbeat every 10 seconds
             }
 
             function startMatchmaking() {
                 showStatus('Searching for a partner...');
                 if (matchmakingInterval) clearInterval(matchmakingInterval);
-                // Poll the server every 3 seconds
-                matchmakingInterval = setInterval(async () => {
+                const poll = async () => {
+                    if (!myPeerId) return;
                     try {
                         const response = await fetch(\`/api/match?peerId=\${myPeerId}\`);
                         const data = await response.json();
                         if (data.partnerId) {
                             clearInterval(matchmakingInterval);
-                            connectToPartner(data.partnerId, true); // This user INITIATES the call
+                            connectToPartner(data.partnerId);
                         }
-                        // else status is 'waiting', so we just keep polling
-                    } catch (error) {
-                        console.error('Matchmaking poll failed:', error);
-                    }
-                }, 3000);
+                    } catch (error) { console.error('Matchmaking poll failed:', error); }
+                };
+                poll(); // Immediately check for a partner
+                matchmakingInterval = setInterval(poll, 3000); // Then poll every 3 seconds
             }
 
             function handleIncomingCall(call) {
-                // This user RECEIVES the call
                 if (matchmakingInterval) clearInterval(matchmakingInterval);
-                showStatus('Partner found! Connecting...');
                 currentCall = call;
                 call.answer(localStream);
                 call.on('stream', (remoteStream) => {
@@ -174,7 +229,6 @@ app.get('/', (req, res) => {
             }
 
             function connectToPartner(partnerId) {
-                showStatus('Partner found! Connecting...');
                 const call = peer.call(partnerId, localStream);
                 currentCall = call;
                 call.on('stream', (remoteStream) => {
@@ -186,29 +240,32 @@ app.get('/', (req, res) => {
             
             function handlePartnerDisconnect() {
                 cleanUpConnection();
-                startMatchmaking(); // Look for a new partner
+                startMatchmaking();
             }
 
             function cleanUpConnection() {
-                if (currentCall) {
-                    currentCall.close();
-                }
+                if (currentCall) currentCall.close();
                 currentCall = null;
                 remoteVideo.srcObject = null;
             }
 
             // --- UI Control Handlers ---
+            function stopAllIntervals() {
+                clearInterval(statsInterval);
+                clearInterval(heartbeatInterval);
+                clearInterval(matchmakingInterval);
+            }
+
             nextBtn.addEventListener('click', () => {
-                if (matchmakingInterval) clearInterval(matchmakingInterval);
                 cleanUpConnection();
                 startMatchmaking();
             });
 
             endBtn.addEventListener('click', () => {
-                if (matchmakingInterval) clearInterval(matchmakingInterval);
+                stopAllIntervals();
                 if (peer) peer.destroy();
                 if (localStream) localStream.getTracks().forEach(track => track.stop());
-                window.location.reload(); // Easiest way to reset everything
+                window.location.reload();
             });
             
             micBtn.addEventListener('click', () => {
@@ -235,5 +292,5 @@ app.get('/', (req, res) => {
 
 // --- PART 3: START THE SERVER ---
 app.listen(PORT, () => {
-    console.log(`[Server] ReelRite server v3 is live on port ${PORT}`);
+    console.log(`[Server] ReelRite server v4 is live on port ${PORT}`);
 });
