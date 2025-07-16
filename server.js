@@ -1,21 +1,17 @@
 // ==========================================================
-//  ReelRite Chat - Single File Server for Render
+//  ReelRite Chat - Single File Server v2 (Improved UI)
 // ==========================================================
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- PART 1: IN-MEMORY MATCHMAKING API ---
+// --- PART 1: IN-MEMORY MATCHMAKING API (No changes needed) ---
 let waitingQueue = [];
 
 app.get('/api/match', (req, res) => {
     const { peerId } = req.query;
-    if (!peerId) {
-        return res.status(400).json({ error: 'peerId is required' });
-    }
-    // Prevent the same user from matching with themselves if they retry quickly
+    if (!peerId) return res.status(400).json({ error: 'peerId is required' });
     waitingQueue = waitingQueue.filter(id => id !== peerId);
-
     if (waitingQueue.length > 0) {
         const partnerId = waitingQueue.shift();
         console.log(`[Matchmaking] Matched ${peerId} with ${partnerId}`);
@@ -29,8 +25,6 @@ app.get('/api/match', (req, res) => {
 
 
 // --- PART 2: THE ROOT ROUTE THAT SERVES THE ENTIRE APP ---
-// This is the most important part to fix the "Not Found" error.
-// It tells the server what to do when someone visits your main URL.
 app.get('/', (req, res) => {
     const htmlContent = `
 <!DOCTYPE html>
@@ -39,204 +33,261 @@ app.get('/', (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReelRite Chat - Anonymous, Random Video Chat</title>
-    <meta name="description" content="Connect instantly with random strangers for free anonymous video chat, audio call, or text chat. No signup required. Fast, secure, and private conversations on ReelRite.site.">
-    <link rel="canonical" href="https://ReelRite.site">
+    <meta name="description" content="Connect instantly with random strangers for free anonymous video chat. No signup required.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>">
+    
     <style>
-        :root { --bg-color: #121212; --surface-color: #1e1e1e; --primary-color: #03dac6; --text-color: #e0e0e0; --text-secondary-color: #a0a0a0; --error-color: #cf6679; }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); line-height: 1.6; }
-        header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; background-color: var(--surface-color); border-bottom: 1px solid #333; }
-        .logo { font-size: 1.5rem; font-weight: bold; }
-        main { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
-        #loading-screen { text-align: center; padding-top: 10vh; }
-        #loading-screen h1 { font-size: 3rem; color: var(--primary-color); }
-        #loading-screen button { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 1rem 2rem; font-size: 1.2rem; font-weight: bold; cursor: pointer; border-radius: 8px; margin-top: 2rem; transition: transform 0.2s; }
-        #loading-screen button:hover { transform: scale(1.05); }
-        .permission-text { margin-top: 1rem; color: var(--text-secondary-color); font-size: 0.9rem; }
-        #chat-app { display: none; gap: 1.5rem; }
-        #chat-app.active { display: flex; }
-        .video-container { flex: 3; display: flex; flex-direction: column; gap: 1rem; }
-        .video-wrapper { position: relative; background-color: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9;}
-        #remote-video, #local-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        .video-wrapper.local { max-height: 180px; width: 320px; position: absolute; bottom: 30px; right: 40px; border: 2px solid var(--primary-color); z-index: 10; }
-        .status-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 5; }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        /* --- General Setup --- */
+        :root { --bg-color: #1a1a1a; --surface-color: rgba(30, 30, 30, 0.8); --primary-color: #2574ff; --danger-color: #ff3b30; --text-color: #f5f5f7; --text-secondary: #a8a8a8; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); }
+
+        /* --- UI Containers --- */
+        .ui-container { display: none; }
+        .ui-container.active { display: flex; }
+
+        /* --- Lobby Screen --- */
+        #lobby { flex-direction: column; justify-content: center; align-items: center; text-align: center; height: 100%; padding: 2rem; }
+        #lobby .logo { font-size: 3.5rem; font-weight: bold; }
+        #lobby .logo span { font-size: 5rem; vertical-align: middle; }
+        #lobby p { font-size: 1.2rem; color: var(--text-secondary); margin: 1rem 0 2rem 0; max-width: 500px; }
+        #start-btn { background-color: var(--primary-color); color: white; border: none; padding: 1rem 2.5rem; font-size: 1.2rem; font-weight: bold; cursor: pointer; border-radius: 50px; transition: transform 0.2s, box-shadow 0.2s; }
+        #start-btn:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(37, 116, 255, 0.4); }
+        .permission-text { margin-top: 1.5rem; font-size: 0.9rem; color: var(--text-secondary); }
+
+        /* --- Main Chat UI --- */
+        #chat-ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+        #video-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #000; }
+        #remote-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #local-video-pip { position: absolute; bottom: 20px; right: 20px; width: 20vw; max-width: 320px; min-width: 150px; border-radius: 12px; border: 2px solid var(--primary-color); overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.5); cursor: move; z-index: 100; }
+        #local-video-pip video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+        
+        /* --- Status Overlay (Connecting, etc.) --- */
+        #status-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 90; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.3s; }
+        #status-overlay.hidden { opacity: 0; pointer-events: none; }
+        .spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid var(--primary-color); border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #status-text { margin-top: 1rem; }
-        .chat-and-controls { flex: 1; display: flex; flex-direction: column; background-color: var(--surface-color); border-radius: 8px; }
-        #text-chat-container { display: flex; flex-direction: column; height: 100%; }
-        #messages { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-        .message { margin-bottom: 0.75rem; }
-        .message.system { font-style: italic; color: var(--text-secondary-color); }
-        .message.remote .author { color: var(--primary-color); font-weight: bold; }
-        .message.local .author { color: #81c784; font-weight: bold; }
-        .message p { margin: 0; padding: 0.5rem 0.75rem; background: #333; border-radius: 12px; display: inline-block; max-width: 90%; }
-        .message.local { text-align: right; }
-        #chat-form { display: flex; padding: 1rem; border-top: 1px solid #333; }
-        #chat-input { flex-grow: 1; background: #333; border: 1px solid #444; color: var(--text-color); padding: 0.75rem; border-radius: 8px; }
-        #chat-form button { background: var(--primary-color); color: var(--bg-color); border: none; padding: 0.75rem; margin-left: 0.5rem; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #chat-form button:disabled, #chat-input:disabled { opacity: 0.5; cursor: not-allowed; }
-        #controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem; border-top: 1px solid #333; }
-        #controls button { padding: 0.75rem; border: 1px solid #444; background: #333; color: var(--text-color); font-weight: bold; cursor: pointer; border-radius: 8px; transition: background-color 0.2s; }
-        #controls button:hover { background-color: #444; }
-        #controls #next-btn { background-color: var(--primary-color); color: var(--bg-color); grid-column: 1 / -1; }
-        #controls .danger { background-color: var(--error-color); color: var(--bg-color); }
-        @media (max-width: 900px) { #chat-app.active { flex-direction: column; } .video-wrapper.local { bottom: 1rem; right: 1rem; width: 160px; } }
+        #status-text { margin-top: 1.5rem; font-size: 1.2rem; }
+
+        /* --- Chat & Controls Overlay --- */
+        #chat-controls-overlay { position: absolute; bottom: 0; left: 0; width: 100%; z-index: 95; padding: 20px; display: flex; justify-content: center; align-items: flex-end; background: linear-gradient(to top, rgba(0,0,0,0.7), transparent); }
+        .controls-bar { display: flex; align-items: center; gap: 15px; padding: 12px 20px; background-color: var(--surface-color); backdrop-filter: blur(10px); border-radius: 50px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .control-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: var(--text-color); width: 50px; height: 50px; border-radius: 50%; font-size: 1.5rem; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: background-color 0.2s; }
+        .control-btn:hover { background: rgba(255,255,255,0.2); }
+        #next-btn { background-color: var(--primary-color); color: white; border: none; font-weight: bold; font-size: 1rem; padding: 0 25px; height: 50px; border-radius: 25px; display: flex; align-items: center; gap: 8px; }
+        #next-btn:hover { filter: brightness(1.1); }
+        #end-btn { background-color: var(--danger-color); color: white; border: none; }
     </style>
 </head>
 <body>
-    <header><div class="logo">ReelRite Chat 🦊</div></header>
-    <main>
-        <div id="loading-screen">
-            <h1>ReelRite Chat</h1>
-            <p>Connecting you to the world, anonymously.</p>
-            <button id="start-btn">Start Chatting</button>
-            <p class="permission-text">Please allow camera and microphone access.</p>
+    <!-- Lobby Screen: Shown on first load -->
+    <div id="lobby" class="ui-container active">
+        <h1 class="logo">ReelRite <span>🦊</span></h1>
+        <p>Connect instantly with random people from around the world. Your conversations are anonymous and secure.</p>
+        <button id="start-btn">Start Chatting</button>
+        <p class="permission-text">Camera and microphone access will be requested.</p>
+    </div>
+
+    <!-- Main Chat UI: Hidden until chat starts -->
+    <div id="chat-ui" class="ui-container">
+        <div id="video-container">
+            <video id="remote-video" autoplay playsinline></video>
         </div>
-        <div id="chat-app">
-            <div class="video-container">
-                <div class="video-wrapper">
-                    <video id="remote-video" autoplay playsinline></video>
-                    <div id="status-overlay"><div class="spinner"></div><p id="status-text">...</p></div>
-                </div>
-                <div class="video-wrapper local"><video id="local-video" muted autoplay playsinline></video></div>
-            </div>
-            <div class="chat-and-controls">
-                <div id="text-chat-container">
-                    <div id="messages"><div class="message system">Welcome! Be respectful.</div></div>
-                    <form id="chat-form">
-                        <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off" disabled>
-                        <button type="submit" disabled>Send</button>
-                    </form>
-                </div>
-                <div id="controls">
-                    <button id="next-btn">Next</button>
-                    <button id="end-btn" class="danger">End</button>
-                    <button id="toggle-mic-btn">🎤 Mute</button>
-                    <button id="toggle-cam-btn">📷 Hide Cam</button>
-                </div>
+
+        <div id="local-video-pip">
+            <video id="local-video" muted autoplay playsinline></video>
+        </div>
+
+        <div id="status-overlay">
+            <div class="spinner"></div>
+            <p id="status-text">Searching for a partner...</p>
+        </div>
+
+        <div id="chat-controls-overlay">
+            <div class="controls-bar">
+                <button id="mic-btn" class="control-btn" title="Mute/Unmute Mic">🎤</button>
+                <button id="cam-btn" class="control-btn" title="Hide/Show Camera">📷</button>
+                <button id="end-btn" class="control-btn" title="End Session">⏹️</button>
+                <button id="next-btn" title="Find Next User">Next ➡️</button>
             </div>
         </div>
-    </main>
+    </div>
+    
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // UI Elements
+            const lobbyUI = document.getElementById('lobby');
+            const chatUI = document.getElementById('chat-ui');
             const startBtn = document.getElementById('start-btn');
-            const loadingScreen = document.getElementById('loading-screen');
-            const chatApp = document.getElementById('chat-app');
+            
+            // Video Elements
             const localVideo = document.getElementById('local-video');
             const remoteVideo = document.getElementById('remote-video');
+            const localVideoPip = document.getElementById('local-video-pip');
+
+            // Status & Controls
             const statusOverlay = document.getElementById('status-overlay');
             const statusText = document.getElementById('status-text');
             const nextBtn = document.getElementById('next-btn');
             const endBtn = document.getElementById('end-btn');
-            const toggleMicBtn = document.getElementById('toggle-mic-btn');
-            const toggleCamBtn = document.getElementById('toggle-cam-btn');
-            const chatForm = document.getElementById('chat-form');
-            const chatInput = document.getElementById('chat-input');
-            const messagesDiv = document.getElementById('messages');
-            let localStream, peer, currentPeerConnection, currentCall, myPeerId;
-            startBtn.addEventListener('click', initialize);
-            async function initialize() {
+            const micBtn = document.getElementById('mic-btn');
+            const camBtn = document.getElementById('cam-btn');
+
+            // App State
+            let localStream, peer, currentCall, myPeerId;
+
+            // --- Main Flow ---
+            startBtn.addEventListener('click', startChatSession);
+            
+            async function startChatSession() {
                 try {
-                    loadingScreen.querySelector('h1').textContent = 'Getting permissions...';
+                    lobbyUI.querySelector('p').textContent = 'Requesting permissions...';
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                     localVideo.srcObject = localStream;
-                    loadingScreen.style.display = 'none';
-                    chatApp.classList.add('active');
+                    
+                    lobbyUI.classList.remove('active');
+                    chatUI.classList.add('active');
+                    
                     initializePeer();
                 } catch (err) {
-                    loadingScreen.querySelector('h1').textContent = 'Error!';
-                    loadingScreen.querySelector('p').textContent = 'Camera/mic access is required. Please refresh and allow.';
+                    lobbyUI.querySelector('p').textContent = 'Camera and microphone access is required to chat. Please refresh and allow permissions.';
                 }
             }
+
+            // --- PeerJS Logic ---
             function initializePeer() {
                 peer = new Peer(undefined, { host: 'peerjs-server.fly.dev', secure: true, port: 443 });
                 peer.on('open', id => { myPeerId = id; findPartner(); });
-                peer.on('call', call => {
-                    currentCall = call;
-                    statusOverlay.style.display = 'none';
-                    call.answer(localStream);
-                    call.on('stream', remoteStream => { remoteVideo.srcObject = remoteStream; });
-                    call.on('close', endSession);
+                peer.on('call', handleIncomingCall);
+                peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    showStatus('Connection error, retrying...');
+                    setTimeout(findPartner, 5000);
                 });
-                peer.on('connection', conn => { currentPeerConnection = conn; setupDataConnection(conn); });
-                peer.on('error', err => { console.error('PeerJS error:', err); addSystemMessage('Error. Reconnecting...'); endSession(); setTimeout(findPartner, 3000); });
             }
+
+            function handleIncomingCall(call) {
+                currentCall = call;
+                call.answer(localStream);
+                call.on('stream', (remoteStream) => {
+                    hideStatus();
+                    remoteVideo.srcObject = remoteStream;
+                });
+                call.on('close', handlePartnerDisconnect);
+            }
+            
+            function handlePartnerDisconnect() {
+                addSystemMessage('Partner has disconnected.');
+                cleanUpConnection();
+                findPartner();
+            }
+
             async function findPartner() {
-                statusOverlay.style.display = 'flex';
-                statusText.textContent = 'Searching for a partner...';
+                showStatus('Searching for a partner...');
                 try {
                     const response = await fetch(\`/api/match?peerId=\${myPeerId}\`);
                     const data = await response.json();
-                    if (data.partnerId) { connectToPartner(data.partnerId); }
-                    else { statusText.textContent = 'Waiting in queue...'; }
+                    if (data.partnerId) {
+                        connectToPartner(data.partnerId);
+                    } else {
+                        showStatus('You are in the queue...');
+                    }
                 } catch (error) {
-                    statusText.textContent = 'Error finding partner. Retrying...';
+                    showStatus('Error finding partner. Retrying...');
                     setTimeout(findPartner, 5000);
                 }
             }
+
             function connectToPartner(partnerId) {
-                statusText.textContent = 'Connecting...';
+                showStatus('Partner found! Connecting...');
                 const call = peer.call(partnerId, localStream);
                 currentCall = call;
-                call.on('stream', remoteStream => { remoteVideo.srcObject = remoteStream; statusOverlay.style.display = 'none'; });
-                call.on('close', endSession);
-                const conn = peer.connect(partnerId);
-                currentPeerConnection = conn;
-                setupDataConnection(conn);
+                call.on('stream', (remoteStream) => {
+                    hideStatus();
+                    remoteVideo.srcObject = remoteStream;
+                });
+                call.on('close', handlePartnerDisconnect);
             }
-            function setupDataConnection(conn) {
-                conn.on('open', () => { enableChat(); addSystemMessage('Partner connected!'); });
-                conn.on('data', data => { addChatMessage(data.message, 'remote'); });
-                conn.on('close', () => { addSystemMessage('Partner left.'); endSession(); });
-            }
-            function endSession() {
-                if (currentCall) { currentCall.close(); currentCall = null; }
-                if (currentPeerConnection) { currentPeerConnection.close(); currentPeerConnection = null; }
-                remoteVideo.srcObject = null;
-                disableChat();
-                if (myPeerId) findPartner();
-            }
-            nextBtn.addEventListener('click', endSession);
-            endBtn.addEventListener('click', () => { window.location.reload(); });
-            toggleMicBtn.addEventListener('click', () => {
-                const enabled = localStream.getAudioTracks()[0].enabled;
-                localStream.getAudioTracks()[0].enabled = !enabled;
-                toggleMicBtn.textContent = !enabled ? '🎤 Mute' : '🎤 Unmute';
-            });
-            toggleCamBtn.addEventListener('click', () => {
-                const enabled = localStream.getVideoTracks()[0].enabled;
-                localStream.getVideoTracks()[0].enabled = !enabled;
-                toggleCamBtn.textContent = !enabled ? '📷 Hide Cam' : '📷 Show Cam';
-            });
-            chatForm.addEventListener('submit', e => {
-                e.preventDefault();
-                const message = chatInput.value;
-                if (message.trim() && currentPeerConnection) {
-                    currentPeerConnection.send({ message });
-                    addChatMessage(message, 'local');
-                    chatInput.value = '';
+
+            function cleanUpConnection() {
+                if (currentCall) {
+                    currentCall.close();
                 }
+                currentCall = null;
+                remoteVideo.srcObject = null;
+            }
+
+            // --- UI Control Handlers ---
+            nextBtn.addEventListener('click', () => {
+                cleanUpConnection();
+                findPartner();
             });
-            function enableChat() { chatInput.disabled = false; chatForm.querySelector('button').disabled = false; }
-            function disableChat() { chatInput.disabled = true; chatForm.querySelector('button').disabled = true; }
-            function addChatMessage(text, type) {
-                const author = type === 'local' ? 'You' : 'Partner';
-                const messageDiv = document.createElement('div');
-                messageDiv.className = \`message \${type}\`;
-                messageDiv.innerHTML = \`<div class="author">\${author}</div><p>\${text}</p>\`;
-                messagesDiv.appendChild(messageDiv);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            endBtn.addEventListener('click', () => {
+                if (peer) peer.destroy();
+                if (localStream) localStream.getTracks().forEach(track => track.stop());
+                chatUI.classList.remove('active');
+                lobbyUI.classList.add('active');
+                lobbyUI.querySelector('p').textContent = 'Connect instantly with random people from around the world. Your conversations are anonymous and secure.';
+            });
+            
+            micBtn.addEventListener('click', () => {
+                const audioTrack = localStream.getAudioTracks()[0];
+                audioTrack.enabled = !audioTrack.enabled;
+                micBtn.innerHTML = audioTrack.enabled ? '🎤' : '<span style="color:var(--danger-color);">🔇</span>';
+            });
+
+            camBtn.addEventListener('click', () => {
+                const videoTrack = localStream.getVideoTracks()[0];
+                videoTrack.enabled = !videoTrack.enabled;
+                camBtn.innerHTML = videoTrack.enabled ? '📷' : '<span style="color:var(--danger-color);">📸</span>';
+            });
+            
+            function showStatus(message) {
+                statusText.textContent = message;
+                statusOverlay.classList.remove('hidden');
             }
+
+            function hideStatus() {
+                statusOverlay.classList.add('hidden');
+            }
+            
+            // This is a placeholder for future text chat
             function addSystemMessage(text) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message system';
-                messageDiv.textContent = text;
-                messagesDiv.appendChild(messageDiv);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                console.log(`System: ${text}`);
             }
+
+            // --- Draggable PiP Video ---
+            let isDragging = false;
+            let offsetX, offsetY;
+
+            localVideoPip.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                offsetX = e.clientX - localVideoPip.offsetLeft;
+                offsetY = e.clientY - localVideoPip.offsetTop;
+                localVideoPip.style.transition = 'none'; // Disable transition while dragging
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                let newX = e.clientX - offsetX;
+                let newY = e.clientY - offsetY;
+
+                // Constrain to viewport
+                const parentRect = document.body.getBoundingClientRect();
+                const pipRect = localVideoPip.getBoundingClientRect();
+                newX = Math.max(0, Math.min(newX, parentRect.width - pipRect.width));
+                newY = Math.max(0, Math.min(newY, parentRect.height - pipRect.height));
+                
+                localVideoPip.style.left = \`\${newX}px\`;
+                localVideoPip.style.top = \`\${newY}px\`;
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                localVideoPip.style.transition = ''; // Re-enable transition
+            });
         });
     </script>
 </body>
@@ -248,5 +299,5 @@ app.get('/', (req, res) => {
 
 // --- PART 3: START THE SERVER ---
 app.listen(PORT, () => {
-    console.log(`[Server] ReelRite server is live on port ${PORT}`);
+    console.log(`[Server] ReelRite server v2 is live on port ${PORT}`);
 });
