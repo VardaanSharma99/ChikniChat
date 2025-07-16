@@ -1,11 +1,28 @@
 // =======================================================================
-//  ReelRite Chat - Single File Server v5 (Video + Text Chat)
+//  ReelRite Chat - Single File Server v6 (Self-Hosted & Stable)
 // =======================================================================
 const express = require('express');
+const { ExpressPeerServer } = require('peer'); // NEW: Import PeerServer
+const http = require('http');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- PART 1: ROBUST SERVER-SIDE LOGIC (No changes needed) ---
+// Create a standard HTTP server from our Express app
+const server = http.createServer(app);
+
+// --- PART 1: SETUP OUR OWN PEERJS SERVER ---
+// This removes the dependency on any unreliable third-party server.
+const peerServer = ExpressPeerServer(server, {
+    debug: true,
+    path: '/broker' // All PeerJS traffic will go to /broker
+});
+
+// Mount the PeerJS server on the /broker path
+app.use('/broker', peerServer);
+
+
+// --- PART 2: ROBUST SERVER-SIDE MATCHMAKING LOGIC ---
 const activeUsers = new Map();
 const waitingPeers = new Set();
 app.get('/api/stats', (req, res) => res.json({ online: activeUsers.size }));
@@ -23,11 +40,9 @@ app.get('/api/match', (req, res) => {
     if (waitingArray.length > 0) {
         const partnerId = waitingArray.shift();
         waitingPeers.delete(partnerId);
-        console.log(`[Matchmaking] Paired ${peerId} with ${partnerId}`);
         res.json({ partnerId: partnerId });
     } else {
         waitingPeers.add(peerId);
-        console.log(`[Matchmaking] ${peerId} is now waiting.`);
         res.json({ status: 'waiting' });
     }
 });
@@ -41,7 +56,7 @@ setInterval(() => {
     }
 }, 30000);
 
-// --- PART 2: THE ROOT ROUTE THAT SERVES THE ENTIRE APP ---
+// --- PART 3: THE ROOT ROUTE THAT SERVES THE ENTIRE APP ---
 app.get('/', (req, res) => {
     const htmlContent = `
 <!DOCTYPE html>
@@ -50,8 +65,6 @@ app.get('/', (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReelRite Chat - Anonymous Video & Text Chat</title>
-    <meta name="description" content="Connect with random strangers for free anonymous video, audio, and text chat. No signup required.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>">
     <style>
         :root { --bg-color: #1a1a1a; --surface-color: rgba(30, 30, 30, 0.85); --primary-color: #2574ff; --danger-color: #ff3b30; --text-color: #f5f5f7; --text-secondary: #a8a8a8; --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -80,10 +93,7 @@ app.get('/', (req, res) => {
         .control-btn:hover { background: rgba(255,255,255,0.2); }
         .notification-badge { position: absolute; top: 5px; right: 5px; width: 10px; height: 10px; background-color: var(--danger-color); border-radius: 50%; display: none; }
         #next-btn { background-color: var(--primary-color); color: white; border: none; font-weight: bold; font-size: 1rem; padding: 0 25px; height: 50px; border-radius: 25px; display: flex; align-items: center; gap: 8px; }
-        #next-btn:hover { filter: brightness(1.1); }
         #end-btn { background-color: var(--danger-color); color: white; border: none; }
-        
-        /* --- Text Chat Window --- */
         #chat-window { position: absolute; bottom: 100px; left: 20px; width: 340px; height: 450px; background-color: var(--surface-color); backdrop-filter: blur(10px); border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 94; display: flex; flex-direction: column; overflow: hidden; transform: translateY(120%); transition: transform 0.3s ease-in-out; pointer-events: all; }
         #chat-window.open { transform: translateY(0); }
         #message-list { flex-grow: 1; padding: 15px; overflow-y: auto; }
@@ -91,42 +101,21 @@ app.get('/', (req, res) => {
         .message .author { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px; }
         .message p { padding: 8px 12px; border-radius: 18px; line-height: 1.4; max-width: 80%; word-wrap: break-word; }
         .message.local { align-items: flex-end; }
-        .message.local .author { color: #81c784; }
         .message.local p { background-color: var(--primary-color); color: white; }
         .message.remote { align-items: flex-start; }
-        .message.remote .author { color: #bb86fc; }
         .message.remote p { background-color: #373737; }
         .message.system { align-items: center; font-style: italic; font-size: 0.8rem; color: var(--text-secondary); }
         #chat-form { display: flex; padding: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
         #chat-input { flex-grow: 1; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); padding: 10px; border-radius: 20px; font-size: 1rem; }
-        #chat-input:disabled { background-color: rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
-    <div id="lobby" class="ui-container active">
-        <h1 class="logo">ReelRite <span>🦊</span></h1>
-        <p>Anonymous Video & Text Chat</p>
-        <div id="online-status">🟢 <span id="online-counter">--</span> users online</div>
-        <button id="start-btn">Start Chatting</button>
-    </div>
-    <div id="chat-ui" class="ui-container">
-        <div id="video-container"><video id="remote-video" autoplay playsinline></video></div>
-        <div id="local-video-pip"><video id="local-video" muted autoplay playsinline></video></div>
-        <div id="status-overlay"><div class="spinner"></div><p id="status-text">Searching...</p></div>
-        <div id="chat-window"><div id="message-list"></div><form id="chat-form"><input id="chat-input" placeholder="Type a message..." autocomplete="off" disabled/></form></div>
-        <div id="chat-controls-overlay">
-            <div class="controls-bar">
-                <button id="mic-btn" class="control-btn" title="Mute Mic">🎤</button>
-                <button id="cam-btn" class="control-btn" title="Hide Camera">📷</button>
-                <button id="chat-btn" class="control-btn" title="Toggle Chat">💬<div class="notification-badge"></div></button>
-                <button id="end-btn" class="control-btn" title="End Session">⏹️</button>
-                <button id="next-btn" title="Find Next User">Next ➡️</button>
-            </div>
-        </div>
-    </div>
+    <div id="lobby" class="ui-container active"><h1 class="logo">ReelRite <span>🦊</span></h1><p>Anonymous Video & Text Chat</p><div id="online-status">🟢 <span id="online-counter">--</span> users online</div><button id="start-btn">Start Chatting</button></div>
+    <div id="chat-ui" class="ui-container"><div id="video-container"><video id="remote-video" autoplay playsinline></video></div><div id="local-video-pip"><video id="local-video" muted autoplay playsinline></video></div><div id="status-overlay"><div class="spinner"></div><p id="status-text">Searching...</p></div><div id="chat-window"><div id="message-list"></div><form id="chat-form"><input id="chat-input" placeholder="Type a message..." autocomplete="off" disabled/></form></div><div id="chat-controls-overlay"><div class="controls-bar"><button id="mic-btn" class="control-btn" title="Mute Mic">🎤</button><button id="cam-btn" class="control-btn" title="Hide Camera">📷</button><button id="chat-btn" class="control-btn" title="Toggle Chat">💬<div class="notification-badge"></div></button><button id="end-btn" class="control-btn" title="End Session">⏹️</button><button id="next-btn" title="Find Next User">Next ➡️</button></div></div></div>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Elements and State ---
             const lobbyUI = document.getElementById('lobby'), chatUI = document.getElementById('chat-ui');
             const onlineCounter = document.getElementById('online-counter');
             const startBtn = document.getElementById('start-btn');
@@ -152,7 +141,6 @@ app.get('/', (req, res) => {
 
             // --- Main Flow ---
             startBtn.addEventListener('click', startChatSession);
-            
             async function startChatSession() {
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -166,15 +154,25 @@ app.get('/', (req, res) => {
 
             function initializePeer() {
                 if (peer) peer.destroy();
-                peer = new Peer(undefined, { host: 'peerjs-server.fly.dev', secure: true, port: 443 });
+                // ***** CRITICAL CHANGE: Connect to our own server *****
+                peer = new Peer(undefined, {
+                    host: '/', // Connect to the same host the page is on
+                    path: '/broker', // The path we configured on the server
+                    secure: location.protocol === 'https:',
+                    // On Render, the port is handled by their proxy, so we don't need to specify it.
+                });
                 peer.on('open', id => {
                     myPeerId = id;
                     startHeartbeat();
                     startMatchmaking();
                 });
                 peer.on('call', handleIncomingCall);
-                peer.on('connection', handleIncomingDataConnection); // Listen for data connection
-                peer.on('error', (err) => { console.error('PeerJS error:', err); showStatus('Connection error...'); });
+                peer.on('connection', handleIncomingDataConnection);
+                peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    showStatus('Connection error...');
+                    // This error now means a P2P connection failed, not that the server is down.
+                });
             }
 
             // --- Heartbeat & Matchmaking ---
@@ -182,7 +180,6 @@ app.get('/', (req, res) => {
                 if (heartbeatInterval) clearInterval(heartbeatInterval);
                 heartbeatInterval = setInterval(() => { if (myPeerId) fetch(\`/api/heartbeat?peerId=\${myPeerId}\`, { method: 'POST' }); }, 10000);
             }
-
             function startMatchmaking() {
                 showStatus('Searching for a partner...');
                 if (matchmakingInterval) clearInterval(matchmakingInterval);
@@ -201,58 +198,44 @@ app.get('/', (req, res) => {
                 matchmakingInterval = setInterval(poll, 3000);
             }
 
+            // --- Connection Handling ---
             function handleIncomingCall(call) {
                 if (matchmakingInterval) clearInterval(matchmakingInterval);
                 currentCall = call;
                 call.answer(localStream);
-                call.on('stream', (remoteStream) => {
-                    hideStatus();
-                    remoteVideo.srcObject = remoteStream;
-                });
+                call.on('stream', streamRemoteVideo);
                 call.on('close', handlePartnerDisconnect);
             }
-
-            // --- Data Channel (Text Chat) Logic ---
             function handleIncomingDataConnection(conn) {
                 currentDataConnection = conn;
                 setupDataConnection(conn);
             }
-
             function setupDataConnection(conn) {
-                conn.on('open', () => {
-                    addSystemMessage('Partner connected. Say hi!');
-                    enableChat();
-                });
+                conn.on('open', () => { addSystemMessage('Partner connected. Say hi!'); enableChat(); });
                 conn.on('data', (data) => {
                     addChatMessage('Partner', data);
-                    if (!chatWindow.classList.contains('open')) {
-                        chatBtn.querySelector('.notification-badge').style.display = 'block';
-                    }
+                    if (!chatWindow.classList.contains('open')) chatBtn.querySelector('.notification-badge').style.display = 'block';
                 });
                 conn.on('close', handlePartnerDisconnect);
             }
-            
             function connectToPartner(partnerId) {
-                // Connect both media (video) and data (text)
                 const call = peer.call(partnerId, localStream);
                 currentCall = call;
-                call.on('stream', (remoteStream) => {
-                    hideStatus();
-                    remoteVideo.srcObject = remoteStream;
-                });
+                call.on('stream', streamRemoteVideo);
                 call.on('close', handlePartnerDisconnect);
-
                 const conn = peer.connect(partnerId);
                 currentDataConnection = conn;
                 setupDataConnection(conn);
             }
-
+            function streamRemoteVideo(stream) {
+                hideStatus();
+                remoteVideo.srcObject = stream;
+            }
             function handlePartnerDisconnect() {
                 addSystemMessage('Partner has disconnected.');
                 cleanUpConnection();
                 startMatchmaking();
             }
-
             function cleanUpConnection() {
                 if (currentCall) currentCall.close();
                 if (currentDataConnection) currentDataConnection.close();
@@ -260,13 +243,12 @@ app.get('/', (req, res) => {
                 currentDataConnection = null;
                 remoteVideo.srcObject = null;
                 disableChat();
-                messageList.innerHTML = ''; // Clear chat history
+                messageList.innerHTML = '';
             }
-            
-            // --- UI Control Handlers ---
+
+            // --- UI Handlers ---
             nextBtn.addEventListener('click', () => { cleanUpConnection(); startMatchmaking(); });
             endBtn.addEventListener('click', () => { window.location.reload(); });
-            
             micBtn.addEventListener('click', () => {
                 const audioTrack = localStream.getAudioTracks()[0];
                 audioTrack.enabled = !audioTrack.enabled;
@@ -277,12 +259,10 @@ app.get('/', (req, res) => {
                 videoTrack.enabled = !videoTrack.enabled;
                 camBtn.innerHTML = videoTrack.enabled ? '📷' : '<span style="color:var(--danger-color);">📸</span>';
             });
-
             chatBtn.addEventListener('click', () => {
                 chatWindow.classList.toggle('open');
                 chatBtn.querySelector('.notification-badge').style.display = 'none';
             });
-
             chatForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 const message = chatInput.value;
@@ -292,10 +272,8 @@ app.get('/', (req, res) => {
                     chatInput.value = '';
                 }
             });
-
             function enableChat() { chatInput.disabled = false; }
             function disableChat() { chatInput.disabled = true; }
-
             function addChatMessage(author, text) {
                 const messageDiv = document.createElement('div');
                 const type = author === 'You' ? 'local' : 'remote';
@@ -309,9 +287,7 @@ app.get('/', (req, res) => {
                 messageDiv.className = 'message system';
                 messageDiv.innerHTML = \`<p>\${text}</p>\`;
                 messageList.appendChild(messageDiv);
-                messageList.scrollTop = messageList.scrollHeight;
             }
-
             function showStatus(message) { statusText.textContent = message; statusOverlay.classList.remove('hidden'); }
             function hideStatus() { statusOverlay.classList.add('hidden'); }
         });
@@ -323,7 +299,9 @@ app.get('/', (req, res) => {
     res.send(htmlContent);
 });
 
-// --- PART 3: START THE SERVER ---
-app.listen(PORT, () => {
-    console.log(`[Server] ReelRite server v5 is live on port ${PORT}`);
+
+// --- PART 4: START THE SERVER ---
+// We start the http server, not the express app directly
+server.listen(PORT, () => {
+    console.log(`[Server] ReelRite server v6 is live on port ${PORT}`);
 });
