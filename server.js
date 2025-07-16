@@ -117,7 +117,7 @@ app.get('/', (req, res) => {
 </head>
 <body>
     <div id="lobby" class="ui-container active">
-        <h1 class="logo">ReelRite <span>🦊</span></h1>
+        <h1 class="logo">ReelRddddite <span>🦊</span></h1>
         <p>Connect instantly with random people from around the world. Your conversations are anonymous and secure.</p>
         <div id="online-status">🟢 <span id="online-counter">--</span> users online</div>
         <button id="start-btn">Start Chatting</button>
